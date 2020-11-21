@@ -22,13 +22,13 @@ import (
 	"time"
 
 	"k8s.io/ingress-nginx/internal/nginx"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 func main() {
 	err := exec.Command("bash", "-c", "pkill -SIGTERM -f nginx-ingress-controller").Run()
 	if err != nil {
-		klog.Errorf("unexpected error terminating ingress controller: %v", err)
+		klog.ErrorS(err, "terminating ingress controller")
 		os.Exit(1)
 	}
 

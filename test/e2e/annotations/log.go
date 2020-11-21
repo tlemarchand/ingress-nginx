@@ -17,23 +17,21 @@ limitations under the License.
 package annotations
 
 import (
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
+	"strings"
+
+	"github.com/onsi/ginkgo"
 
 	"k8s.io/ingress-nginx/test/e2e/framework"
 )
 
-var _ = framework.IngressNginxDescribe("Annotations - Log", func() {
+var _ = framework.DescribeAnnotation("enable-access-log enable-rewrite-log", func() {
 	f := framework.NewDefaultFramework("log")
 
-	BeforeEach(func() {
-		f.NewEchoDeploymentWithReplicas(2)
+	ginkgo.BeforeEach(func() {
+		f.NewEchoDeployment()
 	})
 
-	AfterEach(func() {
-	})
-
-	It("set access_log off", func() {
+	ginkgo.It("set access_log off", func() {
 		host := "log.foo.com"
 		annotations := map[string]string{
 			"nginx.ingress.kubernetes.io/enable-access-log": "false",
@@ -44,11 +42,11 @@ var _ = framework.IngressNginxDescribe("Annotations - Log", func() {
 
 		f.WaitForNginxServer(host,
 			func(server string) bool {
-				return Expect(server).Should(ContainSubstring(`access_log off;`))
+				return strings.Contains(server, `access_log off;`)
 			})
 	})
 
-	It("set rewrite_log on", func() {
+	ginkgo.It("set rewrite_log on", func() {
 		host := "log.foo.com"
 		annotations := map[string]string{
 			"nginx.ingress.kubernetes.io/enable-rewrite-log": "true",
@@ -59,7 +57,7 @@ var _ = framework.IngressNginxDescribe("Annotations - Log", func() {
 
 		f.WaitForNginxServer(host,
 			func(server string) bool {
-				return Expect(server).Should(ContainSubstring(`rewrite_log on;`))
+				return strings.Contains(server, `rewrite_log on;`)
 			})
 	})
 })

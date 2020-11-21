@@ -20,7 +20,7 @@ import (
 	"strconv"
 	"time"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	apiv1 "k8s.io/api/core/v1"
 
@@ -70,7 +70,7 @@ const (
 
 	// SSL enabled protocols to use
 	// http://nginx.org/en/docs/http/ngx_http_ssl_module.html#ssl_protocols
-	sslProtocols = "TLSv1.2"
+	sslProtocols = "TLSv1.2 TLSv1.3"
 
 	// Disable TLS 1.3 early data
 	// http://nginx.org/en/docs/http/ngx_http_ssl_module.html#ssl_early_data
@@ -111,10 +111,19 @@ type Configuration struct {
 	// By default this is disabled
 	EnableAccessLogForDefaultBackend bool `json:"enable-access-log-for-default-backend"`
 
-	// AccessLogPath sets the path of the access logs if enabled
+	// AccessLogPath sets the path of the access logs for both http and stream contexts if enabled
 	// http://nginx.org/en/docs/http/ngx_http_log_module.html#access_log
+	// http://nginx.org/en/docs/stream/ngx_stream_log_module.html#access_log
 	// By default access logs go to /var/log/nginx/access.log
 	AccessLogPath string `json:"access-log-path,omitempty"`
+
+	// HttpAccessLogPath sets the path of the access logs for http context globally if enabled
+	// http://nginx.org/en/docs/http/ngx_http_log_module.html#access_log
+	HttpAccessLogPath string `json:"http-access-log-path,omitempty"`
+
+	// StreamAccessLogPath sets the path of the access logs for stream context globally if enabled
+	// http://nginx.org/en/docs/stream/ngx_stream_log_module.html#access_log
+	StreamAccessLogPath string `json:"stream-access-log-path,omitempty"`
 
 	// WorkerCPUAffinity bind nginx worker processes to CPUs this will improve response latency
 	// http://nginx.org/en/docs/ngx_core_module.html#worker_cpu_affinity
@@ -128,6 +137,10 @@ type Configuration struct {
 	// EnableModsecurity enables the modsecurity module for NGINX
 	// By default this is disabled
 	EnableModsecurity bool `json:"enable-modsecurity"`
+
+	// EnableOCSP enables the OCSP support in SSL connections
+	// By default this is disabled
+	EnableOCSP bool `json:"enable-ocsp"`
 
 	// EnableOWASPCoreRules enables the OWASP ModSecurity Core Rule Set (CRS)
 	// By default this is disabled
@@ -153,9 +166,18 @@ type Configuration struct {
 	// http://nginx.org/en/docs/http/ngx_http_core_module.html#client_body_timeout
 	ClientBodyTimeout int `json:"client-body-timeout,omitempty"`
 
-	// DisableAccessLog disables the Access Log globally from NGINX ingress controller
-	//http://nginx.org/en/docs/http/ngx_http_log_module.html
+	// DisableAccessLog disables the Access Log globally for both HTTP and Stream contexts from NGINX ingress controller
+	// http://nginx.org/en/docs/http/ngx_http_log_module.html
+	// http://nginx.org/en/docs/stream/ngx_stream_log_module.html
 	DisableAccessLog bool `json:"disable-access-log,omitempty"`
+
+	// DisableHTTPAccessLog disables the Access Log for http context globally from NGINX ingress controller
+	// http://nginx.org/en/docs/http/ngx_http_log_module.html
+	DisableHTTPAccessLog bool `json:"disable-http-access-log,omitempty"`
+
+	// DisableStreamAccessLog disables the Access Log for stream context globally from NGINX ingress controller
+	// http://nginx.org/en/docs/stream/ngx_stream_log_module.html
+	DisableStreamAccessLog bool `json:"disable-stream-access-log,omitempty"`
 
 	// DisableIpv6DNS disables IPv6 for nginx resolver
 	DisableIpv6DNS bool `json:"disable-ipv6-dns"`
@@ -267,6 +289,11 @@ type Configuration struct {
 	// the /nginx_status endpoint of the "_" server
 	NginxStatusIpv4Whitelist []string `json:"nginx-status-ipv4-whitelist,omitempty"`
 	NginxStatusIpv6Whitelist []string `json:"nginx-status-ipv6-whitelist,omitempty"`
+
+	// Plugins configures plugins to use placed in the directory /etc/nginx/lua/plugins.
+	// Every plugin has to have main.lua in the root. Every plugin has to bundle all of its dependencies.
+	// The execution order follows the definition.
+	Plugins []string `json:"plugins,omitempty"`
 
 	// If UseProxyProtocol is enabled ProxyRealIPCIDR defines the default the IP/network address
 	// of your external load balancer
@@ -393,6 +420,10 @@ type Configuration struct {
 	// gzip Compression Level that will be used
 	GzipLevel int `json:"gzip-level,omitempty"`
 
+	// Minimum length of responses to be sent to the client before it is eligible
+	// for gzip compression, in bytes.
+	GzipMinLength int `json:"gzip-min-length,omitempty"`
+
 	// MIME types in addition to "text/html" to compress. The special value “*” matches any MIME type.
 	// Responses with the “text/html” type are always compressed if UseGzip is enabled
 	GzipTypes string `json:"gzip-types,omitempty"`
@@ -457,6 +488,9 @@ type Configuration struct {
 	// Sets whether to use incoming X-Forwarded headers.
 	UseForwardedHeaders bool `json:"use-forwarded-headers"`
 
+	// Sets whether to enable the real ip module
+	EnableRealIp bool `json:"enable-real-ip"`
+
 	// Sets the header field for identifying the originating IP address of a client
 	// Default is X-Forwarded-For
 	ForwardedForHeader string `json:"forwarded-for-header,omitempty"`
@@ -477,6 +511,12 @@ type Configuration struct {
 	// https://github.com/opentracing-contrib/nginx-opentracing
 	// By default this is disabled
 	EnableOpentracing bool `json:"enable-opentracing"`
+
+	// OpentracingOperationName specifies a custom name for the server span
+	OpentracingOperationName string `json:"opentracing-operation-name"`
+
+	// OpentracingOperationName specifies a custom name for the location span
+	OpentracingLocationOperationName string `json:"opentracing-location-operation-name"`
 
 	// ZipkinCollectorHost specifies the host to use when uploading traces
 	ZipkinCollectorHost string `json:"zipkin-collector-host"`
@@ -543,6 +583,10 @@ type Configuration struct {
 	// DatadogCollectorPort specifies the port to use when uploading traces
 	// Default: 8126
 	DatadogCollectorPort int `json:"datadog-collector-port"`
+
+	// DatadogEnvironment specifies the environment this trace belongs to.
+	// Default: prod
+	DatadogEnvironment string `json:"datadog-environment"`
 
 	// DatadogServiceName specifies the service name to use for any traces created
 	// Default: nginx
@@ -621,11 +665,6 @@ type Configuration struct {
 	// +optional
 	GlobalExternalAuth GlobalExternalAuth `json:"global-external-auth"`
 
-	// EnableInfluxDB enables the nginx InfluxDB extension
-	// http://github.com/influxdata/nginx-influxdb-module/
-	// By default this is disabled
-	EnableInfluxDB bool `json:"enable-influxdb"`
-
 	// Checksum contains a checksum of the configmap configuration
 	Checksum string `json:"-"`
 
@@ -644,6 +683,16 @@ type Configuration struct {
 	// DefaultSSLCertificate holds the default SSL certificate to use in the configuration
 	// It can be the fake certificate or the one behind the flag --default-ssl-certificate
 	DefaultSSLCertificate *ingress.SSLCert `json:"-"`
+
+	// ProxySSLLocationOnly controls whether the proxy-ssl parameters defined in the
+	// proxy-ssl-* annotations are applied on on location level only in the nginx.conf file
+	// Default is that those are applied on server level, too
+	ProxySSLLocationOnly bool `json:"proxy-ssl-location-only"`
+
+	// DefaultType Sets the default MIME type of a response.
+	// http://nginx.org/en/docs/http/ngx_http_core_module.html#default_type
+	// Default: text/html
+	DefaultType string `json:"default-type"`
 }
 
 // NewDefault returns the default nginx configuration
@@ -680,6 +729,7 @@ func NewDefault() Configuration {
 		EnableUnderscoresInHeaders:       false,
 		ErrorLogLevel:                    errorLevel,
 		UseForwardedHeaders:              false,
+		EnableRealIp:                     false,
 		ForwardedForHeader:               "X-Forwarded-For",
 		ComputeFullForwardedFor:          false,
 		ProxyAddOriginalURIHeader:        false,
@@ -694,7 +744,8 @@ func NewDefault() Configuration {
 		HSTSMaxAge:                       hstsMaxAge,
 		HSTSPreload:                      false,
 		IgnoreInvalidHeaders:             true,
-		GzipLevel:                        5,
+		GzipLevel:                        1,
+		GzipMinLength:                    256,
 		GzipTypes:                        gzipTypes,
 		KeepAlive:                        75,
 		KeepAliveRequests:                100,
@@ -715,7 +766,7 @@ func NewDefault() Configuration {
 		ProxyHeadersHashBucketSize:       64,
 		ProxyStreamResponses:             1,
 		ReusePort:                        true,
-		ShowServerTokens:                 true,
+		ShowServerTokens:                 false,
 		SSLBufferSize:                    sslBufferSize,
 		SSLCiphers:                       sslCiphers,
 		SSLECDHCurve:                     "auto",
@@ -723,15 +774,15 @@ func NewDefault() Configuration {
 		SSLEarlyData:                     sslEarlyData,
 		SSLSessionCache:                  true,
 		SSLSessionCacheSize:              sslSessionCacheSize,
-		SSLSessionTickets:                true,
+		SSLSessionTickets:                false,
 		SSLSessionTimeout:                sslSessionTimeout,
 		EnableBrotli:                     false,
-		UseGzip:                          true,
+		UseGzip:                          false,
 		UseGeoIP:                         true,
 		UseGeoIP2:                        false,
 		WorkerProcesses:                  strconv.Itoa(runtime.NumCPU()),
 		WorkerShutdownTimeout:            "240s",
-		VariablesHashBucketSize:          128,
+		VariablesHashBucketSize:          256,
 		VariablesHashMaxSize:             2048,
 		UseHTTP2:                         true,
 		ProxyStreamTimeout:               "600s",
@@ -760,9 +811,9 @@ func NewDefault() Configuration {
 			ProxyHTTPVersion:         "1.1",
 			ProxyMaxTempFileSize:     "1024m",
 		},
-		UpstreamKeepaliveConnections: 32,
+		UpstreamKeepaliveConnections: 320,
 		UpstreamKeepaliveTimeout:     60,
-		UpstreamKeepaliveRequests:    100,
+		UpstreamKeepaliveRequests:    10000,
 		LimitConnZoneVariable:        defaultLimitConnZoneVariable,
 		BindAddressIpv4:              defBindAddress,
 		BindAddressIpv6:              defBindAddress,
@@ -776,6 +827,7 @@ func NewDefault() Configuration {
 		JaegerSamplerPort:            5778,
 		JaegerSamplerHost:            "http://127.0.0.1",
 		DatadogServiceName:           "nginx",
+		DatadogEnvironment:           "prod",
 		DatadogCollectorPort:         8126,
 		DatadogOperationNameOverride: "nginx.handle",
 		DatadogSampleRate:            1.0,
@@ -786,9 +838,11 @@ func NewDefault() Configuration {
 		NoTLSRedirectLocations:       "/.well-known/acme-challenge",
 		NoAuthLocations:              "/.well-known/acme-challenge",
 		GlobalExternalAuth:           defGlobalExternalAuth,
+		ProxySSLLocationOnly:         false,
+		DefaultType:                  "text/html",
 	}
 
-	if klog.V(5) {
+	if klog.V(5).Enabled() {
 		cfg.ErrorLogLevel = "debug"
 	}
 
@@ -815,6 +869,8 @@ type TemplateConfig struct {
 	ListenPorts              *ListenPorts
 	PublishService           *apiv1.Service
 	EnableMetrics            bool
+	MaxmindEditionFiles      []string
+	MonitorMaxBatchSize      int
 
 	PID        string
 	StatusPath string

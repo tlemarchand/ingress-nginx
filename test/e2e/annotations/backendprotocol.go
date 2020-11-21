@@ -17,22 +17,21 @@ limitations under the License.
 package annotations
 
 import (
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
+	"strings"
+
+	"github.com/onsi/ginkgo"
+
 	"k8s.io/ingress-nginx/test/e2e/framework"
 )
 
-var _ = framework.IngressNginxDescribe("Annotations - Backendprotocol", func() {
+var _ = framework.DescribeAnnotation("backend-protocol", func() {
 	f := framework.NewDefaultFramework("backendprotocol")
 
-	BeforeEach(func() {
-		f.NewEchoDeploymentWithReplicas(2)
+	ginkgo.BeforeEach(func() {
+		f.NewEchoDeployment()
 	})
 
-	AfterEach(func() {
-	})
-
-	It("should set backend protocol to https:// and use proxy_pass", func() {
+	ginkgo.It("should set backend protocol to https:// and use proxy_pass", func() {
 		host := "backendprotocol.foo.com"
 		annotations := map[string]string{
 			"nginx.ingress.kubernetes.io/backend-protocol": "HTTPS",
@@ -43,11 +42,11 @@ var _ = framework.IngressNginxDescribe("Annotations - Backendprotocol", func() {
 
 		f.WaitForNginxServer(host,
 			func(server string) bool {
-				return Expect(server).Should(ContainSubstring("proxy_pass https://upstream_balancer;"))
+				return strings.Contains(server, "proxy_pass https://upstream_balancer;")
 			})
 	})
 
-	It("should set backend protocol to grpc:// and use grpc_pass", func() {
+	ginkgo.It("should set backend protocol to grpc:// and use grpc_pass", func() {
 		host := "backendprotocol.foo.com"
 		annotations := map[string]string{
 			"nginx.ingress.kubernetes.io/backend-protocol": "GRPC",
@@ -58,11 +57,11 @@ var _ = framework.IngressNginxDescribe("Annotations - Backendprotocol", func() {
 
 		f.WaitForNginxServer(host,
 			func(server string) bool {
-				return Expect(server).Should(ContainSubstring("grpc_pass grpc://upstream_balancer;"))
+				return strings.Contains(server, "grpc_pass grpc://upstream_balancer;")
 			})
 	})
 
-	It("should set backend protocol to grpcs:// and use grpc_pass", func() {
+	ginkgo.It("should set backend protocol to grpcs:// and use grpc_pass", func() {
 		host := "backendprotocol.foo.com"
 		annotations := map[string]string{
 			"nginx.ingress.kubernetes.io/backend-protocol": "GRPCS",
@@ -73,11 +72,11 @@ var _ = framework.IngressNginxDescribe("Annotations - Backendprotocol", func() {
 
 		f.WaitForNginxServer(host,
 			func(server string) bool {
-				return Expect(server).Should(ContainSubstring("grpc_pass grpcs://upstream_balancer;"))
+				return strings.Contains(server, "grpc_pass grpcs://upstream_balancer;")
 			})
 	})
 
-	It("should set backend protocol to '' and use fastcgi_pass", func() {
+	ginkgo.It("should set backend protocol to '' and use fastcgi_pass", func() {
 		host := "backendprotocol.foo.com"
 		annotations := map[string]string{
 			"nginx.ingress.kubernetes.io/backend-protocol": "FCGI",
@@ -88,11 +87,11 @@ var _ = framework.IngressNginxDescribe("Annotations - Backendprotocol", func() {
 
 		f.WaitForNginxServer(host,
 			func(server string) bool {
-				return Expect(server).Should(ContainSubstring("fastcgi_pass upstream_balancer;"))
+				return strings.Contains(server, "fastcgi_pass upstream_balancer;")
 			})
 	})
 
-	It("should set backend protocol to '' and use ajp_pass", func() {
+	ginkgo.It("should set backend protocol to '' and use ajp_pass", func() {
 		host := "backendprotocol.foo.com"
 		annotations := map[string]string{
 			"nginx.ingress.kubernetes.io/backend-protocol": "AJP",
@@ -103,7 +102,7 @@ var _ = framework.IngressNginxDescribe("Annotations - Backendprotocol", func() {
 
 		f.WaitForNginxServer(host,
 			func(server string) bool {
-				return Expect(server).Should(ContainSubstring("ajp_pass upstream_balancer;"))
+				return strings.Contains(server, "ajp_pass upstream_balancer;")
 			})
 	})
 })

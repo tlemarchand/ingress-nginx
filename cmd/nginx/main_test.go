@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,6 +31,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 
 	"k8s.io/ingress-nginx/internal/ingress/controller"
+	"k8s.io/ingress-nginx/internal/k8s"
 	"k8s.io/ingress-nginx/internal/nginx"
 )
 
@@ -55,6 +57,16 @@ func TestHandleSigterm(t *testing.T) {
 		namespace = "test"
 	)
 
+	k8s.IngressPodDetails = &k8s.PodInfo{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      podName,
+			Namespace: namespace,
+			Labels: map[string]string{
+				"pod-template-hash": "1234",
+			},
+		},
+	}
+
 	clientSet := fake.NewSimpleClientset()
 
 	createConfigMap(clientSet, namespace, t)
@@ -66,7 +78,7 @@ func TestHandleSigterm(t *testing.T) {
 		},
 	}
 
-	_, err := clientSet.CoreV1().Pods(namespace).Create(&pod)
+	_, err := clientSet.CoreV1().Pods(namespace).Create(context.TODO(), &pod, metav1.CreateOptions{})
 	if err != nil {
 		t.Fatalf("error creating pod %v: %v", pod, err)
 	}
@@ -118,7 +130,7 @@ func createConfigMap(clientSet kubernetes.Interface, ns string, t *testing.T) st
 		},
 	}
 
-	cm, err := clientSet.CoreV1().ConfigMaps(ns).Create(configMap)
+	cm, err := clientSet.CoreV1().ConfigMaps(ns).Create(context.TODO(), configMap, metav1.CreateOptions{})
 	if err != nil {
 		t.Errorf("error creating the configuration map: %v", err)
 	}

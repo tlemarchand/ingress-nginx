@@ -12,61 +12,46 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+.DEFAULT_GOAL:=build
+
+# set default shell
+SHELL=/bin/bash -o pipefail -o errexit
+
+DIR:=$(strip $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST)))))
+INIT_BUILDX=$(DIR)/../../hack/init-buildx.sh
+
 # 0.0.0 shouldn't clobber any released builds
-TAG ?= 0.97
-REGISTRY ?= quay.io/kubernetes-ingress-controller
+TAG ?= 0.0
+REGISTRY ?= gcr.io/k8s-staging-ingress-nginx
 
-IMGNAME = nginx
-IMAGE = $(REGISTRY)/$(IMGNAME)
+IMAGE = $(REGISTRY)/nginx
 
-PLATFORMS = amd64 arm arm64
+# required to enable buildx
+export DOCKER_CLI_EXPERIMENTAL=enabled
 
-EMPTY :=
-SPACE := $(EMPTY) $(EMPTY)
-COMMA := ,
-
-.PHONY: all
-all: container
-
-.PHONY: container
-container:
-	DOCKER_CLI_EXPERIMENTAL=enabled docker buildx build \
-		--no-cache \
-		--progress plain \
-		--platform $(subst $(SPACE),$(COMMA),$(PLATFORMS)) \
+# build with buildx
+PLATFORMS?=linux/amd64,linux/arm,linux/arm64,linux/s390x
+OUTPUT=
+PROGRESS=plain
+build: ensure-buildx
+	docker buildx build \
+		--platform=${PLATFORMS} $(OUTPUT) \
+		--progress=$(PROGRESS) \
+		--pull \
 		--tag $(IMAGE):$(TAG) rootfs
 
-	# https://github.com/docker/buildx/issues/59
-	$(foreach PLATFORM,$(PLATFORMS), \
-			DOCKER_CLI_EXPERIMENTAL=enabled docker buildx build \
-			--load \
-			--progress plain \
-			--platform $(PLATFORM) \
-			--tag $(IMAGE)-$(PLATFORM):$(TAG) rootfs;)
+# push the cross built image
+push: OUTPUT=--push
+push: build
 
-ifeq ($(ARCH), amd64)
-	# This is for to maintain the backward compatibility
-	docker tag $(MULTI_ARCH_IMG):$(TAG) $(IMAGE):$(TAG)
+# enable buildx
+ensure-buildx:
+# this is required for cloudbuild
+ifeq ("$(wildcard $(INIT_BUILDX))","")
+	@curl -sSL https://raw.githubusercontent.com/kubernetes/ingress-nginx/master/hack/init-buildx.sh | bash
+else
+	@exec $(INIT_BUILDX)
 endif
+	@echo "done"
 
-.PHONY: push
-push: container
-	$(foreach PLATFORM,$(PLATFORMS), \
-		docker push $(IMAGE)-$(PLATFORM):$(TAG);)
-
-ifeq ($(ARCH), amd64)
-	docker push $(IMAGE):$(TAG)
-endif
-
-.PHONY: release
-release: push
-	echo "done"
-
-.PHONY: init-docker-buildx
-init-docker-buildx:
-ifneq ($(shell docker buildx 2>&1 >/dev/null; echo $?),)
-	$(error "buildx not vailable. Docker 19.03 or higher is required")
-endif
-	docker run --rm --privileged docker/binfmt:66f9012c56a8316f9244ffd7622d7c21c1f6f28d
-	docker buildx create --name ingress-nginx --use || true
-	docker buildx inspect --bootstrap
+.PHONY: build push ensure-buildx

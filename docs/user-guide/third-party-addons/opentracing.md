@@ -39,6 +39,12 @@ have been tested.
 
 Other optional configuration options:
 ```
+# specifies the name to use for the server span
+opentracing-operation-name
+
+# specifies specifies the name to use for the location span
+opentracing-location-operation-name
+
 # specifies the port to use when uploading traces, Default: 9411
 zipkin-collector-port
 
@@ -86,6 +92,9 @@ datadog-collector-port
 # specifies the service name to use for any traces created, Default: nginx
 datadog-service-name
 
+# specifies the environment this trace belongs to, Default: prod
+datadog-environment
+
 # specifies the operation name to use for any traces collected, Default: nginx.handle
 datadog-operation-name-override
 
@@ -100,8 +109,7 @@ All these options (including host) allow environment variables, such as `$HOSTNA
 
 ## Examples
 
-The following examples show how to deploy and test different distributed tracing systems. These example can be performed
-using Minikube.
+The following examples show how to deploy and test different distributed tracing systems. These example can be performed using Minikube.
 
 ### Zipkin
 
@@ -123,7 +131,7 @@ data:
   enable-opentracing: "true"
   zipkin-collector-host: zipkin.default.svc.cluster.local
 metadata:
-  name: nginx-configuration
+  name: ingress-nginx-controller
   namespace: kube-system
 ' | kubectl replace -f -
 ```
@@ -178,7 +186,7 @@ In the Zipkin interface we can see the details:
         enable-opentracing: "true"
         jaeger-collector-host: jaeger-agent.default.svc.cluster.local
       metadata:
-        name: nginx-configuration
+        name: ingress-nginx-controller
         namespace: kube-system
       ' | kubectl replace -f -
     ```

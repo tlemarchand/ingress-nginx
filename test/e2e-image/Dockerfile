@@ -1,6 +1,6 @@
-FROM quay.io/kubernetes-ingress-controller/e2e:v02042020-08e19a278 AS BASE
+FROM k8s.gcr.io/ingress-nginx/e2e-test-runner:v20201029-g92de5212d@sha256:ab3e24d06a1cf152d39cb8c11f1c0dcbd99b20de0b183657e04d32c2d094c0bb AS BASE
 
-FROM alpine:3.11
+FROM alpine:3.12
 
 RUN apk add -U --no-cache \
     ca-certificates \
@@ -11,15 +11,11 @@ RUN apk add -U --no-cache \
     openssl
 
 COPY --from=BASE /go/bin/ginkgo /usr/local/bin/
+COPY --from=BASE /usr/local/bin/helm /usr/local/bin/
 COPY --from=BASE /usr/local/bin/kubectl /usr/local/bin/
+COPY --from=BASE /usr/bin/cfssl /usr/local/bin/
+COPY --from=BASE /usr/bin/cfssljson /usr/local/bin/
 
-COPY e2e.sh             /e2e.sh
-COPY cloud-generic      /cloud-generic
-COPY cluster-wide       /cluster-wide
-COPY overlay            /overlay
-COPY namespace-overlays /namespace-overlays
-RUN sed -E -i 's|^- .*deploy/cloud-generic$|- ../cloud-generic|' /overlay/kustomization.yaml
-COPY wait-for-nginx.sh  /
-COPY e2e.test           /
+COPY . /
 
 CMD [ "/e2e.sh" ]

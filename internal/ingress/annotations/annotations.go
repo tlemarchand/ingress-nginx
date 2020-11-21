@@ -22,7 +22,7 @@ import (
 	"k8s.io/ingress-nginx/internal/ingress/annotations/modsecurity"
 	"k8s.io/ingress-nginx/internal/ingress/annotations/proxyssl"
 	"k8s.io/ingress-nginx/internal/ingress/annotations/sslcipher"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	apiv1 "k8s.io/api/core/v1"
 	networking "k8s.io/api/networking/v1beta1"
@@ -108,7 +108,7 @@ type Ingress struct {
 	UpstreamVhost      string
 	Whitelist          ipwhitelist.SourceRange
 	XForwardedPrefix   string
-	SSLCiphers         string
+	SSLCipher          sslcipher.Config
 	Logs               log.Config
 	InfluxDB           influxdb.Config
 	ModSecurity        modsecurity.Config
@@ -156,7 +156,7 @@ func NewAnnotationExtractor(cfg resolver.Resolver) Extractor {
 			"UpstreamVhost":        upstreamvhost.NewParser(cfg),
 			"Whitelist":            ipwhitelist.NewParser(cfg),
 			"XForwardedPrefix":     xforwardedprefix.NewParser(cfg),
-			"SSLCiphers":           sslcipher.NewParser(cfg),
+			"SSLCipher":            sslcipher.NewParser(cfg),
 			"Logs":                 log.NewParser(cfg),
 			"InfluxDB":             influxdb.NewParser(cfg),
 			"BackendProtocol":      backendprotocol.NewParser(cfg),
@@ -175,7 +175,7 @@ func (e Extractor) Extract(ing *networking.Ingress) *Ingress {
 	data := make(map[string]interface{})
 	for name, annotationParser := range e.annotations {
 		val, err := annotationParser.Parse(ing)
-		klog.V(5).Infof("annotation %v in Ingress %v/%v: %v", name, ing.GetNamespace(), ing.GetName(), val)
+		klog.V(5).InfoS("Parsing Ingress annotation", "name", name, "ingress", klog.KObj(ing), "value", val)
 		if err != nil {
 			if errors.IsMissingAnnotations(err) {
 				continue
@@ -197,11 +197,11 @@ func (e Extractor) Extract(ing *networking.Ingress) *Ingress {
 			if !alreadyDenied {
 				errString := err.Error()
 				data[DeniedKeyName] = &errString
-				klog.Errorf("error reading %v annotation in Ingress %v/%v: %v", name, ing.GetNamespace(), ing.GetName(), err)
+				klog.ErrorS(err, "error reading Ingress annotation", "name", name, "ingress", klog.KObj(ing))
 				continue
 			}
 
-			klog.V(5).Infof("error reading %v annotation in Ingress %v/%v: %v", name, ing.GetNamespace(), ing.GetName(), err)
+			klog.V(5).ErrorS(err, "error reading Ingress annotation", "name", name, "ingress", klog.KObj(ing))
 		}
 
 		if val != nil {
@@ -211,7 +211,7 @@ func (e Extractor) Extract(ing *networking.Ingress) *Ingress {
 
 	err := mergo.MapWithOverwrite(pia, data)
 	if err != nil {
-		klog.Errorf("unexpected error merging extracted annotations: %v", err)
+		klog.ErrorS(err, "unexpected error merging extracted annotations")
 	}
 
 	return pia

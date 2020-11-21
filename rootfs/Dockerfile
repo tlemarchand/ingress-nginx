@@ -13,9 +13,13 @@
 # limitations under the License.
 
 ARG BASE_IMAGE
-ARG VERSION
 
-FROM --platform=$BUILDPLATFORM ${BASE_IMAGE}
+FROM ${BASE_IMAGE}
+
+ARG TARGETARCH
+ARG VERSION
+ARG COMMIT_SHA
+ARG BUILD_ID=UNSET
 
 LABEL org.opencontainers.image.title="NGINX Ingress Controller for Kubernetes"
 LABEL org.opencontainers.image.documentation="https://kubernetes.github.io/ingress-nginx/"
@@ -23,14 +27,24 @@ LABEL org.opencontainers.image.source="https://github.com/kubernetes/ingress-ngi
 LABEL org.opencontainers.image.vendor="The Kubernetes Authors"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 LABEL org.opencontainers.image.version="${VERSION}"
+LABEL org.opencontainers.image.revision="${COMMIT_SHA}"
+
+LABEL build_id="${BUILD_ID}"
 
 WORKDIR  /etc/nginx
 
-RUN apk add -U --no-cache \
-  diffutils \
-  libcap
+RUN apk update \
+  && apk upgrade \
+  && apk add --no-cache \
+    diffutils \
+  && rm -rf /var/cache/apk/*
 
-COPY --chown=www-data:www-data . /
+COPY --chown=www-data:www-data etc /etc
+COPY --chown=www-data:www-data ingress-controller /ingress-controller
+
+COPY --chown=www-data:www-data bin/${TARGETARCH}/dbg /
+COPY --chown=www-data:www-data bin/${TARGETARCH}/nginx-ingress-controller /
+COPY --chown=www-data:www-data bin/${TARGETARCH}/wait-shutdown /
 
 # Fix permission during the build to avoid issues at runtime
 # with volumes (custom templates)
@@ -47,11 +61,12 @@ RUN bash -xeu -c ' \
     chown -R www-data.www-data ${dir}; \
   done'
 
-RUN  setcap    cap_net_bind_service=+ep /nginx-ingress-controller \
-  && setcap -v cap_net_bind_service=+ep /nginx-ingress-controller
-
-RUN  setcap    cap_net_bind_service=+ep /usr/local/nginx/sbin/nginx \
-  && setcap -v cap_net_bind_service=+ep /usr/local/nginx/sbin/nginx
+RUN apk add --no-cache libcap \
+  && setcap    cap_net_bind_service=+ep /nginx-ingress-controller \
+  && setcap -v cap_net_bind_service=+ep /nginx-ingress-controller \
+  && setcap    cap_net_bind_service=+ep /usr/local/nginx/sbin/nginx \
+  && setcap -v cap_net_bind_service=+ep /usr/local/nginx/sbin/nginx \
+  && apk del libcap
 
 USER www-data
 

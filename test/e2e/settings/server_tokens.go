@@ -19,7 +19,7 @@ package settings
 import (
 	"strings"
 
-	. "github.com/onsi/ginkgo"
+	"github.com/onsi/ginkgo"
 
 	networking "k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -27,18 +27,15 @@ import (
 	"k8s.io/ingress-nginx/test/e2e/framework"
 )
 
-var _ = framework.IngressNginxDescribe("Server Tokens", func() {
+var _ = framework.DescribeSetting("server-tokens", func() {
 	f := framework.NewDefaultFramework("server-tokens")
 	serverTokens := "server-tokens"
 
-	BeforeEach(func() {
+	ginkgo.BeforeEach(func() {
 		f.NewEchoDeployment()
 	})
 
-	AfterEach(func() {
-	})
-
-	It("should not exists Server header in the response", func() {
+	ginkgo.It("should not exists Server header in the response", func() {
 		f.UpdateNginxConfigMapData(serverTokens, "false")
 
 		f.EnsureIngress(framework.NewSingleIngress(serverTokens, "/", serverTokens, f.Namespace, framework.EchoService, 80, nil))
@@ -50,7 +47,7 @@ var _ = framework.IngressNginxDescribe("Server Tokens", func() {
 			})
 	})
 
-	It("should exists Server header in the response when is enabled", func() {
+	ginkgo.It("should exists Server header in the response when is enabled", func() {
 		f.UpdateNginxConfigMapData(serverTokens, "true")
 
 		f.EnsureIngress(&networking.Ingress{

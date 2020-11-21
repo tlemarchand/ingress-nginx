@@ -1,36 +1,22 @@
-.PHONY: all
-all: container
 
 DIR:=$(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
 
-# Use docker to run makefile tasks
-USE_DOCKER ?= true
+image:
+	make -C $(DIR)/../../ e2e-test-binary
 
-# Disable run docker tasks if running in prow.
-# only checks the existence of the variable, not the value.
-ifdef DIND_TASKS
-USE_DOCKER=false
-endif
+	cp $(DIR)/../e2e/e2e.test .
+	cp $(DIR)/../e2e/wait-for-nginx.sh .
+	cp -R $(DIR)/../../charts .
 
-.PHONY: container
-container:
-ifeq ($(USE_DOCKER), true)
-	@${DIR}/../../build/run-in-docker.sh make e2e-test-binary
-else
-	@make -C ${DIR}/../../ e2e-test-binary
-endif
+	# TODO: avoid manual copy
+	cp -R $(DIR)/../../test/e2e/settings/ocsp/* .
 
-	cp ../e2e/e2e.test .
-	cp ../e2e/wait-for-nginx.sh .
-	cp -r ../../deploy/cloud-generic .
-	cp -r ../../deploy/cluster-wide .
-
-	docker buildx build \
-		--load \
-		--progress plain \
+	docker build \
 		--tag nginx-ingress-controller:e2e .
 
-.PHONY: clean
 clean:
 	rm -rf _cache e2e.test kubectl cluster ginkgo
 	docker rmi -f nginx-ingress-controller:e2e || true
+
+
+.PHONY: image clean

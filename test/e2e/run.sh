@@ -37,68 +37,68 @@ cleanup() {
 
 trap cleanup EXIT
 
-if ! command -v parallel &> /dev/null; then
-  if [[ "$OSTYPE" == "linux-gnu" ]]; then
-    echo "Parallel is not installed. Use the package manager to install it"
-  elif [[ "$OSTYPE" == "darwin"* ]]; then
-    echo "Parallel is not installed. Install it running brew install parallel"
-  fi
+export KIND_CLUSTER_NAME=${KIND_CLUSTER_NAME:-ingress-nginx-dev}
 
+# Disable execution if running as a Prow job
+#if [[ ! -z ${PROW_JOB_ID:-} ]]; then
+#  echo "skipping execution..."
+#  exit 0
+#fi
+
+if ! command -v kind --version &> /dev/null; then
+  echo "kind is not installed. Use the package manager or visit the official site https://kind.sigs.k8s.io/"
   exit 1
 fi
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-export TAG=dev
-export ARCH=amd64
+# Use 1.0.0-dev to make sure we use the latest configuration in the helm template
+export TAG=1.0.0-dev
+export ARCH=${ARCH:-amd64}
 export REGISTRY=ingress-controller
-
-export K8S_VERSION=${K8S_VERSION:-v1.17.2@sha256:59df31fc61d1da5f46e8a61ef612fa53d3f9140f82419d1ef1a6b9656c6b737c}
 
 export DOCKER_CLI_EXPERIMENTAL=enabled
 
-KIND_CLUSTER_NAME="ingress-nginx-dev"
+export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/kind-config-$KIND_CLUSTER_NAME}"
 
-kind --version || $(echo "Please install kind before running e2e tests";exit 1)
+if [ "${SKIP_CLUSTER_CREATION:-false}" = "false" ]; then
+  echo "[dev-env] creating Kubernetes cluster with kind"
 
-echo "[dev-env] creating Kubernetes cluster with kind"
+  export K8S_VERSION=${K8S_VERSION:-v1.19.1@sha256:98cf5288864662e37115e362b23e4369c8c4a408f99cbc06e58ac30ddc721600}
 
-export KUBECONFIG="${HOME}/.kube/kind-config-${KIND_CLUSTER_NAME}"
-kind create cluster \
-  --verbosity=${KIND_LOG_LEVEL} \
-  --name ${KIND_CLUSTER_NAME} \
-  --config ${DIR}/kind.yaml \
-  --retain \
-  --image "kindest/node:${K8S_VERSION}"
+  kind create cluster \
+    --verbosity=${KIND_LOG_LEVEL} \
+    --name ${KIND_CLUSTER_NAME} \
+    --config ${DIR}/kind.yaml \
+    --retain \
+    --image "kindest/node:${K8S_VERSION}"
 
-echo "Kubernetes cluster:"
-kubectl get nodes -o wide
+  echo "Kubernetes cluster:"
+  kubectl get nodes -o wide
+fi
 
-echo "[dev-env] building container"
-echo "
-make -C ${DIR}/../../ build container
-make -C ${DIR}/../../ e2e-test-image
-make -C ${DIR}/../../images/fastcgi-helloserver/ build container
-make -C ${DIR}/../../images/echo/ container
-make -C ${DIR}/../../images/httpbin/ container
-" | parallel --joblog /tmp/log {} || cat /tmp/log
+if [ "${SKIP_IMAGE_CREATION:-false}" = "false" ]; then
+  if ! command -v ginkgo &> /dev/null; then
+    go get github.com/onsi/ginkgo/ginkgo
+  fi
 
-# Remove after https://github.com/kubernetes/ingress-nginx/pull/4271 is merged
-docker tag ${REGISTRY}/nginx-ingress-controller-${ARCH}:${TAG} ${REGISTRY}/nginx-ingress-controller:${TAG}
+  echo "[dev-env] building image"
+  make -C ${DIR}/../../ clean-image build image
+  make -C ${DIR}/../e2e-image image
+fi
+
+#make -C ${DIR}/../../images/fastcgi-helloserver/ build image
+#make -C ${DIR}/../../images/echo/ image
 
 # Preload images used in e2e tests
-docker pull openresty/openresty:1.15.8.2-alpine
+KIND_WORKERS=$(kind get nodes --name="${KIND_CLUSTER_NAME}" | grep worker | awk '{printf (NR>1?",":"") $1}')
 
 echo "[dev-env] copying docker images to cluster..."
-echo "
-kind load docker-image --name="${KIND_CLUSTER_NAME}" nginx-ingress-controller:e2e
-kind load docker-image --name="${KIND_CLUSTER_NAME}" ${REGISTRY}/nginx-ingress-controller:${TAG}
-kind load docker-image --name="${KIND_CLUSTER_NAME}" ${REGISTRY}/fastcgi-helloserver:${TAG}
-kind load docker-image --name="${KIND_CLUSTER_NAME}" openresty/openresty:1.15.8.2-alpine
-kind load docker-image --name="${KIND_CLUSTER_NAME}" ${REGISTRY}/httpbin:${TAG}
-kind load docker-image --name="${KIND_CLUSTER_NAME}" ${REGISTRY}/echo:${TAG}
 
-" | parallel --joblog /tmp/log {} || cat /tmp/log
+kind load docker-image --name="${KIND_CLUSTER_NAME}" --nodes=${KIND_WORKERS} nginx-ingress-controller:e2e
+kind load docker-image --name="${KIND_CLUSTER_NAME}" --nodes=${KIND_WORKERS} ${REGISTRY}/controller:${TAG}
+#kind load docker-image --name="${KIND_CLUSTER_NAME}" --nodes=${KIND_WORKERS} ${REGISTRY}/fastcgi-helloserver:${TAG}
+#kind load docker-image --name="${KIND_CLUSTER_NAME}" --nodes=${KIND_WORKERS} ${REGISTRY}/echo:${TAG}
 
 echo "[dev-env] running e2e tests..."
 make -C ${DIR}/../../ e2e-test

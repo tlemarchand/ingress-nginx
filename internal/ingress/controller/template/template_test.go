@@ -256,10 +256,12 @@ func TestFormatIP(t *testing.T) {
 }
 
 func TestQuote(t *testing.T) {
+	foo := "foo"
 	cases := map[interface{}]string{
 		"foo":      `"foo"`,
 		"\"foo\"":  `"\"foo\""`,
 		"foo\nbar": `"foo\nbar"`,
+		&foo:       `"foo"`,
 		10:         `"10"`,
 	}
 	for input, output := range cases {
@@ -353,7 +355,7 @@ func TestBuildAuthLocation(t *testing.T) {
 	}
 
 	encodedAuthURL := strings.Replace(base64.URLEncoding.EncodeToString([]byte(loc.Path)), "=", "", -1)
-	externalAuthPath := fmt.Sprintf("/_external-auth-%v", encodedAuthURL)
+	externalAuthPath := fmt.Sprintf("/_external-auth-%v-default", encodedAuthURL)
 
 	testCases := []struct {
 		title                    string
@@ -1173,7 +1175,7 @@ func TestBuildOpenTracing(t *testing.T) {
 		EnableOpentracing:   true,
 		ZipkinCollectorHost: "zipkin-host.com",
 	}
-	expected = "opentracing_load_tracer /usr/local/lib/libzipkin_opentracing.so /etc/nginx/opentracing.json;\r\n"
+	expected = "opentracing_load_tracer /usr/local/lib/libzipkin_opentracing_plugin.so /etc/nginx/opentracing.json;\r\n"
 	actual = buildOpentracing(cfgZipkin, []*ingress.Server{})
 
 	if expected != actual {
@@ -1186,6 +1188,21 @@ func TestBuildOpenTracing(t *testing.T) {
 	}
 	expected = "opentracing_load_tracer /usr/local/lib64/libdd_opentracing.so /etc/nginx/opentracing.json;\r\n"
 	actual = buildOpentracing(cfgDatadog, []*ingress.Server{})
+
+	if expected != actual {
+		t.Errorf("Expected '%v' but returned '%v'", expected, actual)
+	}
+
+	cfgOpenTracing := config.Configuration{
+		EnableOpentracing:                true,
+		DatadogCollectorHost:             "datadog-host.com",
+		OpentracingOperationName:         "my-operation-name",
+		OpentracingLocationOperationName: "my-location-operation-name",
+	}
+	expected = "opentracing_load_tracer /usr/local/lib64/libdd_opentracing.so /etc/nginx/opentracing.json;\r\n"
+	expected += "opentracing_operation_name \"my-operation-name\";\n"
+	expected += "opentracing_location_operation_name \"my-location-operation-name\";\n"
+	actual = buildOpentracing(cfgOpenTracing, []*ingress.Server{})
 
 	if expected != actual {
 		t.Errorf("Expected '%v' but returned '%v'", expected, actual)
@@ -1213,15 +1230,6 @@ func TestEnforceRegexModifier(t *testing.T) {
 	}
 	expected = true
 	actual = enforceRegexModifier(locs)
-
-	if expected != actual {
-		t.Errorf("Expected '%v' but returned '%v'", expected, actual)
-	}
-}
-
-func TestStripLocationModifer(t *testing.T) {
-	expected := "ok.com"
-	actual := stripLocationModifer("~*ok.com")
 
 	if expected != actual {
 		t.Errorf("Expected '%v' but returned '%v'", expected, actual)
@@ -1371,8 +1379,12 @@ func TestShouldLoadOpentracingModule(t *testing.T) {
 
 func TestModSecurityForLocation(t *testing.T) {
 	loadModule := `modsecurity on;
-modsecurity_rules_file /etc/nginx/modsecurity/modsecurity.conf;
 `
+
+	modSecCfg := `modsecurity_rules_file /etc/nginx/modsecurity/modsecurity.conf;
+`
+
+	modsecOff := "modsecurity off;"
 
 	modsecRule := `modsecurity_rules '
 #RULE#
@@ -1392,30 +1404,34 @@ modsecurity_rules_file /etc/nginx/modsecurity/modsecurity.conf;
 		isEnabledInCM       bool
 		isOwaspEnabledInCM  bool
 		isEnabledInLoc      bool
+		isEnableSetInLoc    bool
 		isOwaspEnabledInLoc bool
 		snippet             string
 		transactionID       string
 		expected            string
 	}{
-		{"configmap enabled, configmap OWASP disabled, without annotation, snippet or transaction ID", true, false, false, false, "", "", ""},
-		{"configmap enabled, configmap OWASP disabled, without annotation, snippet and with transaction ID", true, false, false, false, "", transactionID, ""},
-		{"configmap enabled, configmap OWASP  enabled, without annotation, OWASP enabled", true, true, false, false, "", "", ""},
-		{"configmap enabled, configmap OWASP  enabled, without annotation, OWASP disabled, with snippet and no transaction ID", true, true, true, false, testRule, "", modsecRule},
-		{"configmap enabled, configmap OWASP  enabled, without annotation, OWASP disabled, with snippet and transaction ID", true, true, true, false, testRule, transactionID, fmt.Sprintf("%v%v", modsecRule, transactionCfg)},
-		{"configmap enabled, with annotation, OWASP disabled", true, false, true, false, "", "", ""},
-		{"configmap enabled, configmap OWASP disabled, with annotation, OWASP enabled, no snippet and no transaction ID", true, false, true, true, "", "", owaspRules},
-		{"configmap enabled, configmap OWASP disabled, with annotation, OWASP enabled, with snippet and no transaction ID", true, false, true, true, "", "", owaspRules},
-		{"configmap enabled, configmap OWASP disabled, with annotation, OWASP enabled, with snippet and transaction ID", true, false, true, true, "", transactionID, fmt.Sprintf("%v%v", owaspRules, transactionCfg)},
-		{"configmap enabled, OWASP configmap enabled, with annotation, OWASP disabled", true, true, true, false, "", "", ""},
-		{"configmap disabled, with annotation, OWASP disabled", false, false, true, false, "", "", loadModule},
-		{"configmap disabled, with annotation, OWASP disabled", false, false, true, false, testRule, "", fmt.Sprintf("%v%v", loadModule, modsecRule)},
-		{"configmap disabled, with annotation, OWASP enabled", false, false, true, false, testRule, "", fmt.Sprintf("%v%v", loadModule, modsecRule)},
+		{"configmap enabled, configmap OWASP disabled, without annotation, snippet or transaction ID", true, false, false, false, false, "", "", ""},
+		{"configmap enabled, configmap OWASP disabled, without annotation, snippet and with transaction ID", true, false, false, false, false, "", transactionID, transactionCfg},
+		{"configmap enabled, configmap OWASP enabled, without annotation, OWASP enabled", true, true, false, false, false, "", "", ""},
+		{"configmap enabled, configmap OWASP enabled, without annotation, OWASP disabled, with snippet and no transaction ID", true, true, false, false, false, testRule, "", modsecRule},
+		{"configmap enabled, configmap OWASP enabled, without annotation, OWASP disabled, with snippet and transaction ID", true, true, false, false, false, testRule, transactionID, fmt.Sprintf("%v%v", modsecRule, transactionCfg)},
+		{"configmap enabled, configmap OWASP disabled, annotation enabled, OWASP disabled", true, false, true, true, false, "", "", ""},
+		{"configmap enabled, configmap OWASP disabled, annotation enabled, OWASP enabled, no snippet and no transaction ID", true, false, true, true, true, "", "", owaspRules},
+		{"configmap enabled, configmap OWASP disabled, annotation disabled, OWASP disabled, no snippet and no transaction ID", true, false, false, true, false, "", "", modsecOff},
+		{"configmap enabled, configmap OWASP disabled, annotation enabled, OWASP enabled, with snippet and no transaction ID", true, false, true, true, true, "", "", owaspRules},
+		{"configmap enabled, configmap OWASP disabled, annotation enabled, OWASP enabled, with snippet and transaction ID", true, false, true, true, true, "", transactionID, fmt.Sprintf("%v%v", transactionCfg, owaspRules)},
+		{"configmap enabled, configmap OWASP enabled, annotation enabled, OWASP disabled", true, true, true, true, false, "", "", ""},
+		{"configmap disabled, annotation enabled, OWASP disabled", false, false, true, true, false, "", "", fmt.Sprintf("%v%v", loadModule, modSecCfg)},
+		{"configmap disabled, annotation disabled, OWASP disabled", false, false, false, true, false, "", "", ""},
+		{"configmap disabled, annotation enabled, OWASP disabled", false, false, true, true, false, testRule, "", fmt.Sprintf("%v%v%v", loadModule, modsecRule, modSecCfg)},
+		{"configmap disabled, annotation enabled, OWASP enabled", false, false, true, true, false, testRule, "", fmt.Sprintf("%v%v%v", loadModule, modsecRule, modSecCfg)},
 	}
 
 	for _, testCase := range testCases {
 		il := &ingress.Location{
 			ModSecurity: modsecurity.Config{
 				Enable:        testCase.isEnabledInLoc,
+				EnableSet:     testCase.isEnableSetInLoc,
 				OWASPRules:    testCase.isOwaspEnabledInLoc,
 				Snippet:       testCase.snippet,
 				TransactionID: testCase.transactionID,
@@ -1429,6 +1445,27 @@ modsecurity_rules_file /etc/nginx/modsecurity/modsecurity.conf;
 
 		if testCase.expected != actual {
 			t.Errorf("%v: expected '%v' but returned '%v'", testCase.description, testCase.expected, actual)
+		}
+	}
+}
+
+func TestBuildServerName(t *testing.T) {
+
+	testCases := []struct {
+		title    string
+		hostname string
+		expected string
+	}{
+		{"simple domain", "foo.bar", "foo.bar"},
+		{"simple www domain", "www.foo.bar", "www.foo.bar"},
+		{"wildcard domain", "*.foo.bar", "~^(?<subdomain>[\\w-]+)\\.foo\\.bar$"},
+		{"wildcard two levels domain", "*.sub.foo.bar", "~^(?<subdomain>[\\w-]+)\\.sub\\.foo\\.bar$"},
+	}
+
+	for _, testCase := range testCases {
+		result := buildServerName(testCase.hostname)
+		if result != testCase.expected {
+			t.Errorf("%v: expected '%v' but returned '%v'", testCase.title, testCase.expected, result)
 		}
 	}
 }

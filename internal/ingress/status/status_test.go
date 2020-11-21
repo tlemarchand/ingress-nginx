@@ -17,6 +17,7 @@ limitations under the License.
 package status
 
 import (
+	"context"
 	"os"
 	"reflect"
 	"testing"
@@ -29,7 +30,6 @@ import (
 
 	"k8s.io/ingress-nginx/internal/ingress"
 	"k8s.io/ingress-nginx/internal/ingress/annotations/class"
-	"k8s.io/ingress-nginx/internal/ingress/controller/store"
 	"k8s.io/ingress-nginx/internal/k8s"
 	"k8s.io/ingress-nginx/internal/task"
 )
@@ -71,6 +71,12 @@ func buildSimpleClientSet() *testclient.Clientset {
 				},
 				Status: apiv1.PodStatus{
 					Phase: apiv1.PodRunning,
+					Conditions: []apiv1.PodCondition{
+						{
+							Type:   apiv1.PodReady,
+							Status: apiv1.ConditionTrue,
+						},
+					},
 				},
 			},
 			{
@@ -107,6 +113,12 @@ func buildSimpleClientSet() *testclient.Clientset {
 				},
 				Status: apiv1.PodStatus{
 					Phase: apiv1.PodRunning,
+					Conditions: []apiv1.PodCondition{
+						{
+							Type:   apiv1.PodReady,
+							Status: apiv1.ConditionTrue,
+						},
+					},
 				},
 			},
 		}},
@@ -233,7 +245,7 @@ func buildExtensionsIngresses() []networking.Ingress {
 type testIngressLister struct {
 }
 
-func (til *testIngressLister) ListIngresses(store.IngressFilterFunc) []*ingress.Ingress {
+func (til *testIngressLister) ListIngresses() []*ingress.Ingress {
 	var ingresses []*ingress.Ingress
 	ingresses = append(ingresses, &ingress.Ingress{
 		Ingress: networking.Ingress{
@@ -264,13 +276,6 @@ func buildIngressLister() ingressLister {
 
 func buildStatusSync() statusSync {
 	return statusSync{
-		pod: &k8s.PodInfo{
-			Name:      "foo_base_pod",
-			Namespace: apiv1.NamespaceDefault,
-			Labels: map[string]string{
-				"lable_sig": "foo_pod",
-			},
-		},
 		syncQueue: task.NewTaskQueue(fakeSynFn),
 		Config: Config{
 			Client:         buildSimpleClientSet(),
@@ -291,20 +296,21 @@ func TestStatusActions(t *testing.T) {
 		UpdateStatusOnShutdown: true,
 	}
 
-	// create object
-	fkSync := NewStatusSyncer(&k8s.PodInfo{
-		Name:      "foo_base_pod",
-		Namespace: apiv1.NamespaceDefault,
-		Labels: map[string]string{
-			"lable_sig": "foo_pod",
+	k8s.IngressPodDetails = &k8s.PodInfo{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "foo_base_pod",
+			Namespace: apiv1.NamespaceDefault,
+			Labels: map[string]string{
+				"lable_sig": "foo_pod",
+			},
 		},
-	}, c)
+	}
+
+	// create object
+	fkSync := NewStatusSyncer(c)
 	if fkSync == nil {
 		t.Fatalf("expected a valid Sync")
 	}
-
-	// assume k8s >= 1.14 as the rest of the test
-	k8s.IsNetworkingIngressAvailable = true
 
 	fk := fkSync.(statusSync)
 
@@ -322,7 +328,7 @@ func TestStatusActions(t *testing.T) {
 	newIPs := []apiv1.LoadBalancerIngress{{
 		IP: "11.0.0.2",
 	}}
-	fooIngress1, err1 := fk.Client.NetworkingV1beta1().Ingresses(apiv1.NamespaceDefault).Get("foo_ingress_1", metav1.GetOptions{})
+	fooIngress1, err1 := fk.Client.NetworkingV1beta1().Ingresses(apiv1.NamespaceDefault).Get(context.TODO(), "foo_ingress_1", metav1.GetOptions{})
 	if err1 != nil {
 		t.Fatalf("unexpected error")
 	}
@@ -337,7 +343,7 @@ func TestStatusActions(t *testing.T) {
 	fk.Shutdown()
 	// ingress should be empty
 	newIPs2 := []apiv1.LoadBalancerIngress{}
-	fooIngress2, err2 := fk.Client.NetworkingV1beta1().Ingresses(apiv1.NamespaceDefault).Get("foo_ingress_1", metav1.GetOptions{})
+	fooIngress2, err2 := fk.Client.NetworkingV1beta1().Ingresses(apiv1.NamespaceDefault).Get(context.TODO(), "foo_ingress_1", metav1.GetOptions{})
 	if err2 != nil {
 		t.Fatalf("unexpected error")
 	}
@@ -346,7 +352,7 @@ func TestStatusActions(t *testing.T) {
 		t.Fatalf("returned %v but expected %v", fooIngress2CurIPs, newIPs2)
 	}
 
-	oic, err := fk.Client.NetworkingV1beta1().Ingresses(metav1.NamespaceDefault).Get("foo_ingress_different_class", metav1.GetOptions{})
+	oic, err := fk.Client.NetworkingV1beta1().Ingresses(metav1.NamespaceDefault).Get(context.TODO(), "foo_ingress_different_class", metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error")
 	}
@@ -480,6 +486,34 @@ func TestRunningAddresessWithPublishService(t *testing.T) {
 				},
 			),
 			[]string{"10.0.0.1", "foo"},
+			false,
+		},
+		"service type LoadBalancer with same externalIP and ingress IP": {
+			testclient.NewSimpleClientset(
+				&apiv1.ServiceList{Items: []apiv1.Service{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "foo",
+							Namespace: apiv1.NamespaceDefault,
+						},
+						Spec: apiv1.ServiceSpec{
+							Type:        apiv1.ServiceTypeLoadBalancer,
+							ExternalIPs: []string{"10.0.0.1"},
+						},
+						Status: apiv1.ServiceStatus{
+							LoadBalancer: apiv1.LoadBalancerStatus{
+								Ingress: []apiv1.LoadBalancerIngress{
+									{
+										IP: "10.0.0.1",
+									},
+								},
+							},
+						},
+					},
+				},
+				},
+			),
+			[]string{"10.0.0.1"},
 			false,
 		},
 		"invalid service type": {

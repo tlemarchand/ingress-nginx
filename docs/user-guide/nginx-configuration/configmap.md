@@ -19,7 +19,7 @@ data:
     This means that we want a value with boolean values we need to quote the values, like "true" or "false".
     Same for numbers, like "100".
 
-    "Slice" types (defined below as `[]string` or `[]int` can be provided as a comma-delimited string.
+    "Slice" types (defined below as `[]string` or `[]int`) can be provided as a comma-delimited string.
 
 ## Configuration options
 
@@ -32,6 +32,8 @@ The following table shows a configuration option's name, type, and the default v
 |[hide-headers](#hide-headers)|string array|empty|
 |[access-log-params](#access-log-params)|string|""|
 |[access-log-path](#access-log-path)|string|"/var/log/nginx/access.log"|
+|[http-access-log-path](#http-access-log-path)|string|""|
+|[stream-access-log-path](#stream-access-log-path)|string|""|
 |[enable-access-log-for-default-backend](#enable-access-log-for-default-backend)|bool|"false"|
 |[error-log-path](#error-log-path)|string|"/var/log/nginx/error.log"|
 |[enable-modsecurity](#enable-modsecurity)|bool|"false"|
@@ -45,6 +47,7 @@ The following table shows a configuration option's name, type, and the default v
 |[disable-ipv6](#disable-ipv6)|bool|false|
 |[disable-ipv6-dns](#disable-ipv6-dns)|bool|false|
 |[enable-underscores-in-headers](#enable-underscores-in-headers)|bool|false|
+|[enable-ocsp](#enable-ocsp)|bool|false|
 |[ignore-invalid-headers](#ignore-invalid-headers)|bool|true|
 |[retry-non-idempotent](#retry-non-idempotent)|bool|"false"|
 |[error-log-level](#error-log-level)|string|"notice"|
@@ -74,28 +77,29 @@ The following table shows a configuration option's name, type, and the default v
 |[server-name-hash-bucket-size](#server-name-hash-bucket-size)|int|`<size of the processor’s cache line>`
 |[proxy-headers-hash-max-size](#proxy-headers-hash-max-size)|int|512|
 |[proxy-headers-hash-bucket-size](#proxy-headers-hash-bucket-size)|int|64|
+|[plugins](#plugins)|[]string| |
 |[reuse-port](#reuse-port)|bool|"true"|
-|[server-tokens](#server-tokens)|bool|"true"|
-|[ssl-ciphers](#ssl-ciphers)|string|"ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA256"|
+|[server-tokens](#server-tokens)|bool|"false"|
+|[ssl-ciphers](#ssl-ciphers)|string|"ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384"|
 |[ssl-ecdh-curve](#ssl-ecdh-curve)|string|"auto"|
 |[ssl-dh-param](#ssl-dh-param)|string|""|
-|[ssl-protocols](#ssl-protocols)|string|"TLSv1.2"|
+|[ssl-protocols](#ssl-protocols)|string|"TLSv1.2 TLSv1.3"|
 |[ssl-session-cache](#ssl-session-cache)|bool|"true"|
 |[ssl-session-cache-size](#ssl-session-cache-size)|string|"10m"|
-|[ssl-session-tickets](#ssl-session-tickets)|bool|"true"|
+|[ssl-session-tickets](#ssl-session-tickets)|bool|"false"|
 |[ssl-session-ticket-key](#ssl-session-ticket-key)|string|`<Randomly Generated>`
 |[ssl-session-timeout](#ssl-session-timeout)|string|"10m"|
 |[ssl-buffer-size](#ssl-buffer-size)|string|"4k"|
 |[use-proxy-protocol](#use-proxy-protocol)|bool|"false"|
 |[proxy-protocol-header-timeout](#proxy-protocol-header-timeout)|string|"5s"|
-|[use-gzip](#use-gzip)|bool|"true"|
+|[use-gzip](#use-gzip)|bool|"false"|
 |[use-geoip](#use-geoip)|bool|"true"|
 |[use-geoip2](#use-geoip2)|bool|"false"|
 |[enable-brotli](#enable-brotli)|bool|"false"|
 |[brotli-level](#brotli-level)|int|4|
 |[brotli-types](#brotli-types)|string|"application/xml+rss application/atom+xml application/javascript application/x-javascript application/json application/rss+xml application/vnd.ms-fontobject application/x-font-ttf application/x-web-app-manifest+json application/xhtml+xml application/xml font/opentype image/svg+xml image/x-icon text/css text/javascript text/plain text/x-component"|
 |[use-http2](#use-http2)|bool|"true"|
-|[gzip-level](#gzip-level)|int|5|
+|[gzip-level](#gzip-level)|int|1|
 |[gzip-types](#gzip-types)|string|"application/atom+xml application/javascript application/x-javascript application/json application/rss+xml application/vnd.ms-fontobject application/x-font-ttf application/x-web-app-manifest+json application/xhtml+xml application/xml font/opentype image/svg+xml image/x-icon text/css text/javascript text/plain text/x-component"|
 |[worker-processes](#worker-processes)|string|`<Number of CPUs>`|
 |[worker-cpu-affinity](#worker-cpu-affinity)|string|""|
@@ -103,19 +107,22 @@ The following table shows a configuration option's name, type, and the default v
 |[load-balance](#load-balance)|string|"round_robin"|
 |[variables-hash-bucket-size](#variables-hash-bucket-size)|int|128|
 |[variables-hash-max-size](#variables-hash-max-size)|int|2048|
-|[upstream-keepalive-connections](#upstream-keepalive-connections)|int|32|
+|[upstream-keepalive-connections](#upstream-keepalive-connections)|int|320|
 |[upstream-keepalive-timeout](#upstream-keepalive-timeout)|int|60|
-|[upstream-keepalive-requests](#upstream-keepalive-requests)|int|100|
+|[upstream-keepalive-requests](#upstream-keepalive-requests)|int|10000|
 |[limit-conn-zone-variable](#limit-conn-zone-variable)|string|"$binary_remote_addr"|
 |[proxy-stream-timeout](#proxy-stream-timeout)|string|"600s"|
 |[proxy-stream-responses](#proxy-stream-responses)|int|1|
 |[bind-address](#bind-address)|[]string|""|
 |[use-forwarded-headers](#use-forwarded-headers)|bool|"false"|
+|[enable-real-ip](#enable-real-ip)|bool|"false"|
 |[forwarded-for-header](#forwarded-for-header)|string|"X-Forwarded-For"|
 |[compute-full-forwarded-for](#compute-full-forwarded-for)|bool|"false"|
 |[proxy-add-original-uri-header](#proxy-add-original-uri-header)|bool|"false"|
 |[generate-request-id](#generate-request-id)|bool|"true"|
 |[enable-opentracing](#enable-opentracing)|bool|"false"|
+|[opentracing-operation-name](#opentracing-operation-name)|string|""|
+|[opentracing-location-operation-name](#opentracing-location-operation-name)|string|""|
 |[zipkin-collector-host](#zipkin-collector-host)|string|""|
 |[zipkin-collector-port](#zipkin-collector-port)|int|9411|
 |[zipkin-service-name](#zipkin-service-name)|string|"nginx"|
@@ -133,8 +140,9 @@ The following table shows a configuration option's name, type, and the default v
 |[jaeger-trace-baggage-header-prefix](#jaeger-trace-baggage-header-prefix)|string|uberctx-|
 |[datadog-collector-host](#datadog-collector-host)|string|""|
 |[datadog-collector-port](#datadog-collector-port)|int|8126|
-|[datadog-service-name](#datadog-service-name)|service|"nginx"|
-|[datadog-operation-name-override](#datadog-operation-name-override)|service|"nginx.handle"|
+|[datadog-service-name](#datadog-service-name)|string|"nginx"|
+|[datadog-environment](#datadog-environment)|string|"prod"|
+|[datadog-operation-name-override](#datadog-operation-name-override)|string|"nginx.handle"|
 |[datadog-priority-sampling](#datadog-priority-sampling)|bool|"true"|
 |[datadog-sample-rate](#datadog-sample-rate)|float|1.0|
 |[main-snippet](#main-snippet)|string|""|
@@ -178,6 +186,8 @@ The following table shows a configuration option's name, type, and the default v
 |[block-cidrs](#block-cidrs)|[]string|""|
 |[block-user-agents](#block-user-agents)|[]string|""|
 |[block-referers](#block-referers)|[]string|""|
+|[proxy-ssl-location-only](#proxy-ssl-location-only)|bool|"false"|
+|[default-type](#default-type)|string|"text/html"|
 
 ## add-headers
 
@@ -204,9 +214,23 @@ _References:_
 
 ## access-log-path
 
-Access log path. Goes to `/var/log/nginx/access.log` by default.
+Access log path for both http and stream context. Goes to `/var/log/nginx/access.log` by default.
 
 __Note:__ the file `/var/log/nginx/access.log` is a symlink to `/dev/stdout`
+
+## http-access-log-path
+
+Access log path for http context globally.
+_**default:**_ ""
+
+__Note:__ If not specified, the `access-log-path` will be used.
+
+## stream-access-log-path
+
+Access log path for stream context globally.
+_**default:**_ ""
+
+__Note:__ If not specified, the `access-log-path` will be used.
 
 ## enable-access-log-for-default-backend
 
@@ -279,6 +303,11 @@ Disable IPV6 for nginx DNS resolver. _**default:**_ `false`; IPv6 resolving enab
 ## enable-underscores-in-headers
 
 Enables underscores in header names. _**default:**_ is disabled
+
+## enable-ocsp
+
+Enables [Online Certificate Status Protocol stapling](https://en.wikipedia.org/wiki/OCSP_stapling) (OCSP) support.
+_**default:**_ is disabled
 
 ## ignore-invalid-headers
 
@@ -419,7 +448,7 @@ Sets the bucket size for the [map variables hash tables](http://nginx.org/en/doc
 
 ## proxy-real-ip-cidr
 
-If use-proxy-protocol is enabled, proxy-real-ip-cidr defines the default the IP/network address of your external load balancer.
+If use-forwarded-headers or use-proxy-protocol is enabled, proxy-real-ip-cidr defines the default the IP/network address of your external load balancer.
 
 ## proxy-set-headers
 
@@ -464,20 +493,26 @@ _References:_
 - [http://nginx.org/en/docs/hash.html](http://nginx.org/en/docs/hash.html)
 - [https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_headers_hash_bucket_size](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_headers_hash_bucket_size)
 
+## plugins
+
+Activates plugins installed in `/etc/nginx/lua/plugins`. Refer to [ingress-nginx plugins README](https://github.com/kubernetes/ingress-nginx/blob/master/rootfs/etc/nginx/lua/plugins/README.md) for more information on how to write and install a plugin.
+
 ## server-tokens
 
-Send NGINX Server header in responses and display NGINX version in error pages. _**default:**_ is enabled
+Send NGINX Server header in responses and display NGINX version in error pages. _**default:**_ is disabled
 
 ## ssl-ciphers
 
 Sets the [ciphers](http://nginx.org/en/docs/http/ngx_http_ssl_module.html#ssl_ciphers) list to enable. The ciphers are specified in the format understood by the OpenSSL library.
 
 The default cipher list is:
- `ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA256`.
+ `ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384`.
 
 The ordering of a ciphersuite is very important because it decides which algorithms are going to be selected in priority. The recommendation above prioritizes algorithms that provide perfect [forward secrecy](https://wiki.mozilla.org/Security/Server_Side_TLS#Forward_Secrecy).
 
 Please check the [Mozilla SSL Configuration Generator](https://mozilla.github.io/server-side-tls/ssl-config-generator/).
+
+__Note:__ ssl_prefer_server_ciphers directive will be enabled by default for http context.
 
 ## ssl-ecdh-curve
 
@@ -498,15 +533,17 @@ _References:_
 
 ## ssl-protocols
 
-Sets the [SSL protocols](http://nginx.org/en/docs/http/ngx_http_ssl_module.html#ssl_protocols) to use. The default is: `TLSv1.2`.
+Sets the [SSL protocols](http://nginx.org/en/docs/http/ngx_http_ssl_module.html#ssl_protocols) to use. The default is: `TLSv1.2 TLSv1.3`.
 
 Please check the result of the configuration using `https://ssllabs.com/ssltest/analyze.html` or `https://testssl.sh`.
 
 ## ssl-early-data
 
-Enables or disables TLS 1.3 [early data](https://tools.ietf.org/html/rfc8446#section-2.3)
+Enables or disables TLS 1.3 [early data](https://tools.ietf.org/html/rfc8446#section-2.3), also known as Zero Round Trip
+Time Resumption (0-RTT).
 
-This requires `ssl-protocols` to have `TLSv1.3` enabled.
+This requires `ssl-protocols` to have `TLSv1.3` enabled. Enable this with caution, because requests sent within early
+data are subject to [replay attacks](https://tools.ietf.org/html/rfc8470).
 
 [ssl_early_data](http://nginx.org/en/docs/http/ngx_http_ssl_module.html#ssl_early_data). The default is: `false`.
 
@@ -551,7 +588,7 @@ _**default:**_ 5s
 
 ## use-gzip
 
-Enables or disables compression of HTTP responses using the ["gzip" module](http://nginx.org/en/docs/http/ngx_http_gzip_module.html). MIME types to compress are controlled by [gzip-types](#gzip-types). _**default:**_ true
+Enables or disables compression of HTTP responses using the ["gzip" module](http://nginx.org/en/docs/http/ngx_http_gzip_module.html). MIME types to compress are controlled by [gzip-types](#gzip-types). _**default:**_ false
 
 ## use-geoip
 
@@ -594,11 +631,15 @@ Enables or disables [HTTP/2](http://nginx.org/en/docs/http/ngx_http_v2_module.ht
 
 ## gzip-level
 
-Sets the gzip Compression Level that will be used. _**default:**_ 5
+Sets the gzip Compression Level that will be used. _**default:**_ 1
+
+## gzip-min-length
+
+Minimum length of responses to be returned to the client before it is eligible for gzip compression, in bytes. _**default:**_ 256
 
 ## gzip-types
 
-Sets the MIME types in addition to "text/html" to compress. The special value "\*" matches any MIME type. Responses with the "text/html" type are always compressed if `[use-gzip](#use-gzip)` is enabled.
+Sets the MIME types in addition to "text/html" to compress. The special value "\*" matches any MIME type. Responses with the "text/html" type are always compressed if [`use-gzip`](#use-gzip) is enabled.
 _**default:**_ `application/atom+xml application/javascript application/x-javascript application/json application/rss+xml application/vnd.ms-fontobject application/x-font-ttf application/x-web-app-manifest+json application/xhtml+xml application/xml font/opentype image/svg+xml image/x-icon text/css text/plain text/x-component`.
 
 ## worker-processes
@@ -654,7 +695,7 @@ _References:_
 Activates the cache for connections to upstream servers. The connections parameter sets the maximum number of idle
 keepalive connections to upstream servers that are preserved in the cache of each worker process. When this number is
 exceeded, the least recently used connections are closed.
-_**default:**_ 32
+_**default:**_ 320
 
 _References:_
 [http://nginx.org/en/docs/http/ngx_http_upstream_module.html#keepalive](http://nginx.org/en/docs/http/ngx_http_upstream_module.html#keepalive)
@@ -673,7 +714,7 @@ _References:_
 
 Sets the maximum number of requests that can be served through one keepalive connection. After the maximum number of
 requests is made, the connection is closed.
-_**default:**_ 100
+_**default:**_ 10000
 
 
 _References:_
@@ -708,6 +749,10 @@ If true, NGINX passes the incoming `X-Forwarded-*` headers to upstreams. Use thi
 
 If false, NGINX ignores incoming `X-Forwarded-*` headers, filling them with the request information it sees. Use this option if NGINX is exposed directly to the internet, or it's behind a L3/packet-based load balancer that doesn't alter the source IP in the packets.
 
+## enable-real-ip
+
+`enable-real-ip` enables the configuration of [http://nginx.org/en/docs/http/ngx_http_realip_module.html](http://nginx.org/en/docs/http/ngx_http_realip_module.html). Specific attributes of the module can be configured further by using `forwarded-for-header` and `proxy-real-ip-cidr` settings.
+
 ## forwarded-for-header
 
 Sets the header field for identifying the originating IP address of a client. _**default:**_ X-Forwarded-For
@@ -730,6 +775,18 @@ Enables the nginx Opentracing extension. _**default:**_ is disabled
 
 _References:_
 [https://github.com/opentracing-contrib/nginx-opentracing](https://github.com/opentracing-contrib/nginx-opentracing)
+
+## opentracing-operation-name
+
+Specifies a custom name for the server span. _**default:**_ is empty
+
+For example, set to "HTTP $request_method $uri".
+
+## opentracing-location-operation-name
+
+Specifies a custom name for the location span. _**default:**_ is empty
+
+For example, set to "HTTP $request_method $uri".
 
 ## zipkin-collector-host
 
@@ -804,6 +861,10 @@ Specifies the port to use when uploading traces. _**default:**_ 8126
 ## datadog-service-name
 
 Specifies the service name to use for any traces created. _**default:**_ nginx
+
+## datadog-environment
+
+Specifies the environment this trace belongs to. _**default:**_ prod
 
 ## datadog-operation-name-override
 
@@ -1045,3 +1106,16 @@ It's possible to use here full strings and regular expressions. More details abo
 
 _References:_
 [http://nginx.org/en/docs/http/ngx_http_map_module.html#map](http://nginx.org/en/docs/http/ngx_http_map_module.html#map)
+
+## proxy-ssl-location-only
+
+Set if proxy-ssl parameters should be applied only on locations and not on servers.
+_**default:**_ is disabled
+
+## default-type
+
+Sets the default MIME type of a response.
+_**default:**_ text/html
+
+_References:_
+[http://nginx.org/en/docs/http/ngx_http_core_module.html#default_type](http://nginx.org/en/docs/http/ngx_http_core_module.html#default_type)

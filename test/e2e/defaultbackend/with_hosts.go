@@ -17,31 +17,26 @@ limitations under the License.
 package defaultbackend
 
 import (
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
-
 	"net/http"
 	"strings"
 
-	"github.com/parnurzeal/gorequest"
+	"github.com/onsi/ginkgo"
+
 	networking "k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-nginx/test/e2e/framework"
 )
 
-var _ = framework.IngressNginxDescribe("Default backend with hosts", func() {
+var _ = framework.IngressNginxDescribe("[Default Backend] change default settings", func() {
 	f := framework.NewDefaultFramework("default-backend-hosts")
 	host := "foo.com"
 
-	BeforeEach(func() {
-		f.NewEchoDeploymentWithReplicas(1)
+	ginkgo.BeforeEach(func() {
+		f.NewEchoDeployment()
 	})
 
-	AfterEach(func() {
-	})
-
-	It("should apply the annotation to the default backend", func() {
+	ginkgo.It("should apply the annotation to the default backend", func() {
 		annotations := map[string]string{
 			"nginx.ingress.kubernetes.io/proxy-buffer-size": "8k",
 		}
@@ -72,13 +67,10 @@ var _ = framework.IngressNginxDescribe("Default backend with hosts", func() {
 				return strings.Contains(server, "proxy_buffer_size 8k;")
 			})
 
-		resp, _, errs := gorequest.New().
-			Get(f.GetURL(framework.HTTP)).
-			Set("Host", "foo.com").
-			End()
-
-		Expect(errs).Should(BeEmpty())
-		Expect(resp.StatusCode).Should(Equal(http.StatusOK))
+		f.HTTPTestClient().
+			GET("/").
+			WithHeader("Host", "foo.com").
+			Expect().
+			Status(http.StatusOK)
 	})
-
 })

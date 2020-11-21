@@ -17,66 +17,60 @@ limitations under the License.
 package gracefulshutdown
 
 import (
+	"context"
 	"net/http"
+	"strings"
 	"time"
 
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
-	"github.com/parnurzeal/gorequest"
+	"github.com/onsi/ginkgo"
+	"github.com/stretchr/testify/assert"
 	appsv1 "k8s.io/api/apps/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"k8s.io/ingress-nginx/test/e2e/framework"
 )
 
-var _ = framework.IngressNginxDescribe("Shutdown ingress controller", func() {
+var _ = framework.IngressNginxDescribe("[Shutdown] ingress controller", func() {
 	f := framework.NewDefaultFramework("shutdown-ingress-controller")
 
 	host := "shutdown"
 
-	BeforeEach(func() {
+	ginkgo.BeforeEach(func() {
 		f.UpdateNginxConfigMapData("worker-shutdown-timeout", "600s")
-
 		f.NewSlowEchoDeployment()
 	})
 
-	AfterEach(func() {
-	})
-
-	It("should shutdown in less than 60 secons without pending connections", func() {
+	ginkgo.It("should shutdown in less than 60 secons without pending connections", func() {
 		f.EnsureIngress(framework.NewSingleIngress(host, "/", host, f.Namespace, framework.SlowEchoService, 80, nil))
 
 		f.WaitForNginxServer(host,
 			func(server string) bool {
-				return Expect(server).Should(ContainSubstring("server_name shutdown"))
+				return strings.Contains(server, "server_name shutdown")
 			})
 
-		resp, _, _ := gorequest.New().
-			Get(f.GetURL(framework.HTTP)+"/sleep/1").
-			Set("Host", host).
-			End()
-		Expect(resp.StatusCode).Should(Equal(http.StatusOK))
+		f.HTTPTestClient().
+			GET("/sleep/1").
+			WithHeader("Host", host).
+			Expect().
+			Status(http.StatusOK)
 
 		startTime := time.Now()
 
 		f.ScaleDeploymentToZero("nginx-ingress-controller")
 
-		Expect(time.Since(startTime).Seconds()).To(BeNumerically("<=", 60), "waiting shutdown")
+		assert.LessOrEqual(ginkgo.GinkgoT(), int(time.Since(startTime).Seconds()), 60, "waiting shutdown")
 	})
 
-	type asyncResult struct {
-		errs   []error
-		status int
-	}
+	ginkgo.It("should shutdown after waiting 60 seconds for pending connections to be closed", func(done ginkgo.Done) {
+		defer close(done)
 
-	It("should shutdown after waiting 60 seconds for pending connections to be closed", func() {
-		err := framework.UpdateDeployment(f.KubeClientSet, f.Namespace, "nginx-ingress-controller", 1,
-			func(deployment *appsv1.Deployment) error {
-				grace := int64(3600)
-				deployment.Spec.Template.Spec.TerminationGracePeriodSeconds = &grace
-				_, err := f.KubeClientSet.AppsV1().Deployments(f.Namespace).Update(deployment)
-				return err
-			})
-		Expect(err).NotTo(HaveOccurred())
+		err := f.UpdateIngressControllerDeployment(func(deployment *appsv1.Deployment) error {
+			grace := int64(3600)
+			deployment.Spec.Template.Spec.TerminationGracePeriodSeconds = &grace
+			_, err := f.KubeClientSet.AppsV1().Deployments(f.Namespace).Update(context.TODO(), deployment, metav1.UpdateOptions{})
+			return err
+		})
+		assert.Nil(ginkgo.GinkgoT(), err, "updating ingress controller deployment")
 
 		annotations := map[string]string{
 			"nginx.ingress.kubernetes.io/proxy-send-timeout": "600",
@@ -86,56 +80,42 @@ var _ = framework.IngressNginxDescribe("Shutdown ingress controller", func() {
 
 		f.WaitForNginxServer(host,
 			func(server string) bool {
-				return Expect(server).Should(ContainSubstring("server_name shutdown"))
+				return strings.Contains(server, "server_name shutdown")
 			})
-
-		result := make(chan *asyncResult)
 
 		startTime := time.Now()
 
-		go func(host string, c chan *asyncResult) {
-			resp, _, errs := gorequest.New().
-				Get(f.GetURL(framework.HTTP)+"/sleep/70").
-				Set("Host", host).
-				End()
+		result := make(chan int)
+		go func() {
+			defer ginkgo.GinkgoRecover()
+			resp := f.HTTPTestClient().
+				GET("/sleep/70").
+				WithHeader("Host", host).
+				Expect().
+				Raw()
 
-			code := 0
-			if resp != nil {
-				code = resp.StatusCode
-			}
+			result <- resp.StatusCode
+		}()
 
-			c <- &asyncResult{errs, code}
-		}(host, result)
-
-		time.Sleep(5 * time.Second)
+		framework.Sleep(1 * time.Second)
 
 		f.ScaleDeploymentToZero("nginx-ingress-controller")
 
-		ticker := time.NewTicker(time.Second * 10)
+		statusCode := <-result
+		assert.Equal(ginkgo.GinkgoT(), http.StatusOK, statusCode, "expecting a valid response from HTTP request")
+		assert.GreaterOrEqual(ginkgo.GinkgoT(), int(time.Since(startTime).Seconds()), 60, "waiting shutdown")
+	}, 100)
 
-		for {
-			select {
-			case res := <-result:
-				Expect(res.errs).Should(BeEmpty())
-				Expect(res.status).To(Equal(http.StatusOK), "expecting a valid response from HTTP request")
-				Expect(time.Since(startTime).Seconds()).To(BeNumerically(">", 70), "waiting shutdown")
-				ticker.Stop()
-				return
-			case <-ticker.C:
-				framework.Logf("waiting for request completion after shutdown")
-			}
-		}
-	})
+	ginkgo.It("should shutdown after waiting 150 seconds for pending connections to be closed", func(done ginkgo.Done) {
+		defer close(done)
 
-	It("should shutdown after waiting 150 seconds for pending connections to be closed", func() {
-		err := framework.UpdateDeployment(f.KubeClientSet, f.Namespace, "nginx-ingress-controller", 1,
-			func(deployment *appsv1.Deployment) error {
-				grace := int64(3600)
-				deployment.Spec.Template.Spec.TerminationGracePeriodSeconds = &grace
-				_, err := f.KubeClientSet.AppsV1().Deployments(f.Namespace).Update(deployment)
-				return err
-			})
-		Expect(err).NotTo(HaveOccurred())
+		err := f.UpdateIngressControllerDeployment(func(deployment *appsv1.Deployment) error {
+			grace := int64(3600)
+			deployment.Spec.Template.Spec.TerminationGracePeriodSeconds = &grace
+			_, err := f.KubeClientSet.AppsV1().Deployments(f.Namespace).Update(context.TODO(), deployment, metav1.UpdateOptions{})
+			return err
+		})
+		assert.Nil(ginkgo.GinkgoT(), err)
 
 		annotations := map[string]string{
 			"nginx.ingress.kubernetes.io/proxy-send-timeout": "600",
@@ -145,44 +125,29 @@ var _ = framework.IngressNginxDescribe("Shutdown ingress controller", func() {
 
 		f.WaitForNginxServer(host,
 			func(server string) bool {
-				return Expect(server).Should(ContainSubstring("server_name shutdown"))
+				return strings.Contains(server, "server_name shutdown")
 			})
-
-		result := make(chan *asyncResult)
 
 		startTime := time.Now()
 
-		go func(host string, c chan *asyncResult) {
-			resp, _, errs := gorequest.New().
-				Get(f.GetURL(framework.HTTP)+"/sleep/150").
-				Set("Host", host).
-				End()
+		result := make(chan int)
+		go func() {
+			defer ginkgo.GinkgoRecover()
+			resp := f.HTTPTestClient().
+				GET("/sleep/150").
+				WithHeader("Host", host).
+				Expect().
+				Raw()
 
-			code := 0
-			if resp != nil {
-				code = resp.StatusCode
-			}
+			result <- resp.StatusCode
+		}()
 
-			c <- &asyncResult{errs, code}
-		}(host, result)
-
-		time.Sleep(5 * time.Second)
+		framework.Sleep(1 * time.Second)
 
 		f.ScaleDeploymentToZero("nginx-ingress-controller")
 
-		ticker := time.NewTicker(time.Second * 10)
-
-		for {
-			select {
-			case res := <-result:
-				Expect(res.errs).Should(BeEmpty())
-				Expect(res.status).To(Equal(http.StatusOK), "expecting a valid response from HTTP request")
-				Expect(time.Since(startTime).Seconds()).To(BeNumerically(">", 150), "waiting shutdown")
-				ticker.Stop()
-				return
-			case <-ticker.C:
-				framework.Logf("waiting for request completion after shutdown")
-			}
-		}
-	})
+		statusCode := <-result
+		assert.Equal(ginkgo.GinkgoT(), http.StatusOK, statusCode, "expecting a valid response from HTTP request")
+		assert.GreaterOrEqual(ginkgo.GinkgoT(), int(time.Since(startTime).Seconds()), 150, "waiting shutdown")
+	}, 200)
 })
